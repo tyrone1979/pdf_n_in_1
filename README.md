@@ -32,7 +32,7 @@ Pillow>=10.0
    ```
 3. Run:
    ```bash
-   python main.py
+   python pdf_n_in1.py
    ```
 4. Results:
    - `./20in1_out/` – one imposed PDF per source  
