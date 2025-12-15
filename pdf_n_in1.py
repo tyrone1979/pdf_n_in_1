@@ -4,9 +4,6 @@
 把当前目录下所有 pdf 每 6 页拼成 1 页，再按 ~20 MB 一份合并
 python pdf_6in1_merge.py
 """
-import os
-import math
-import tempfile
 import shutil
 from pathlib import Path
 
@@ -144,28 +141,73 @@ def merge_pdfs(pdf_paths, output: Path):
     writer.close()
 
 
+# ================= 新增：单独 merge 模式 =================
+import argparse
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="PDF N-in-1 imposer & merger. "
+                    "Default: impose first, then merge. "
+                    "Use --merge-only to skip imposing and merge existing outputs.")
+    parser.add_argument("-m", "--merge-only",
+                        action="store_true",
+                        help="skip imposing phase, directly merge PDFs already in OUT_DIR")
+    return parser.parse_args()
+
+
+def run_merge_only():
+    """单独执行合并任务"""
+    small_pdfs = sorted(OUT_DIR.glob("*.pdf"))
+    if not small_pdfs:
+        print(f"【合并模式】未在 {OUT_DIR} 找到任何 PDF，无可合并文件")
+        return
+    print(f"【合并模式】发现 {len(small_pdfs)} 个 PDF，开始按 ~{TARGET_MB} MB 合并…")
+    merged_list = merge_by_size(small_pdfs, MERGE_DIR, TARGET_MB)
+    print("【合并模式】全部完成！生成文件：")
+    for m in merged_list:
+        mb = m.stat().st_size / 1024 / 1024
+        print(f"  {m.name}  {mb:.1f} MB")
+
+
 def main():
-    # 1. 列出所有 pdf
-    from itertools import chain
+    args = parse_args()
+
+    # 0. clean merged folder in both modes
+    if MERGE_DIR.exists():
+        shutil.rmtree(MERGE_DIR, ignore_errors=True)
+    MERGE_DIR.mkdir(parents=True, exist_ok=True)
+
+    if args.merge_only:
+        run_merge_only()
+        return
+
+    # ---------- full pipeline ----------
     src_pdfs = sorted(
         p for p in SRC_DIR.iterdir()
         if p.is_file() and p.suffix.lower() == '.pdf'
     )
     if not src_pdfs:
-        print("当前目录未找到 pdf 文件")
+        print("No PDF files found in source directory.")
         return
-    print(f"共发现 {len(src_pdfs)} 个 PDF，开始拼图…")
+    print(f"Found {len(src_pdfs)} PDF(s), starting imposition…")
 
-    # 2. 逐个处理
-    small_pdfs = []
     for pdf in src_pdfs:
-        print(f"[{PAGES_PER_SHEET}→1]", pdf.name)
-        small_pdfs.append(process_single_pdf(pdf, OUT_DIR, PAGES_PER_SHEET))
+        print(f"[{PAGES_PER_SHEET}→1] {pdf.name}")
+        process_single_pdf(pdf, OUT_DIR, PAGES_PER_SHEET)
 
-    print("拼图完成，开始按 ~20 MB 合并…")
-    # 3. 按大小合并
+    # read back from OUT_DIR
+    small_pdfs = sorted(
+        p for p in OUT_DIR.iterdir()
+        if p.is_file() and p.suffix.lower() == '.pdf'
+    )
+    if not small_pdfs:
+        print("No PDFs generated for merging.")
+        return
+
+    print("Imposition finished, merging into ~20 MB chunks…")
     merged_list = merge_by_size(small_pdfs, MERGE_DIR, TARGET_MB)
-    print("全部完成！生成文件：")
+    print("All done! Output files:")
     for m in merged_list:
         mb = m.stat().st_size / 1024 / 1024
         print(f"  {m.name}  {mb:.1f} MB")
